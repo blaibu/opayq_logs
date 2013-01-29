@@ -10,8 +10,6 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.sql.Timestamp;
 import java.text.DecimalFormat;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -20,10 +18,19 @@ public class JamesLogParser { // could do some fancy factory stuff here later...
 
 	public static final int MAX_RESULTS = 10;
 	public static final String DEFAULT_OUTPUT_PATH = "/Users/blai/Documents/james_stats.txt";
+	/**
+	 * mailetDomainCount is a hash between domain -> # of times that domain was the sender of a mail that was marked as sent successfully
+	 */
 	public static LinkedHashMap<String, Integer> mailetDomainCount = new LinkedHashMap<String, Integer>();
 
 	public static HashMap<String, Integer> mailetStats = new HashMap<String, Integer>();
+	/**
+	 * smtpDomainCount is a hash between domain -> # of times that domain was the sender of a mail that was received by the mail server
+	 */
 	public static LinkedHashMap<String, Integer> smtpDomainCount = new LinkedHashMap<String, Integer>();
+	/**
+	 * opayqReceivedMailCount is a hash between opayq user -> # of times that user received a mail 
+	 */
 	public static LinkedHashMap<String, Integer> opayqReceivedMailCount = new LinkedHashMap<String, Integer>();
 
 	/**
@@ -57,8 +64,6 @@ public class JamesLogParser { // could do some fancy factory stuff here later...
 			String line, tld, opayqUser;
 			//int lineNum = 0;
 			while ((line = br.readLine()) != null) {
-				//lineNum++;
-				//System.out.println("lineNum: " + lineNum + line);
 				//01/11/12 21:34:07 INFO  smtpserver: Successfully spooled mail Mail1351805647702-91924 from info@gold-halloween-black.com on 209.17.191.89 for [fadcc6e5@opayq.com]
 				int indexOfAtSign = line.indexOf('@');
 				int indexOfBracket = line.indexOf("[");
@@ -73,7 +78,6 @@ public class JamesLogParser { // could do some fancy factory stuff here later...
 							numCounts = smtpDomainCount.get(tld);
 
 							if(numCounts != null){
-								//System.out.println("found a key");
 								smtpDomainCount.put(tld, numCounts+1);
 							} else {
 								smtpDomainCount.put(tld, new Integer(1));
@@ -86,7 +90,6 @@ public class JamesLogParser { // could do some fancy factory stuff here later...
 						if(numCounts != null){
 							opayqReceivedMailCount.put(opayqUser, numCounts+1);
 						} else {
-							//System.out.println("new email: " + opayqUser);
 							opayqReceivedMailCount.put(opayqUser, new Integer(1));
 						}
 					}
@@ -105,29 +108,7 @@ public class JamesLogParser { // could do some fancy factory stuff here later...
 
 	}
 
-	private static void printTopN(LinkedHashMap<String, Integer> mapToSort, int max, PrintWriter out) throws IOException{
-		int resultsToReturn = max;
-		ArrayList<Integer> values = new ArrayList<Integer>();
-		values.addAll(mapToSort.values());
 
-		Collections.sort(values, Collections.reverseOrder());
-
-		//int last_i = -1;
-		if(values.size() < resultsToReturn){
-			resultsToReturn = values.size();
-		}
-
-		for (Integer i : values.subList(0, resultsToReturn)) { 
-			/*if (last_i == i) // without duplicates
-				continue;
-			last_i = i;
-			 */
-			for (String s : mapToSort.keySet()) { 
-				if (mapToSort.get(s) == i)   
-					out.println(s + ": " + i);
-			}
-		}
-	}
 	/**
 	 * Parse the mailet logs, specifically looking for log lines from the RemoteDelivery mailet which handles email delivery.
 	 * @param filePath
@@ -157,8 +138,8 @@ public class JamesLogParser { // could do some fancy factory stuff here later...
 				int indexOfSuccessfullyTo = line.indexOf("successfully to ");
 				if(indexOfSuccessfullyTo > 0){
 					mailetStats.put("successful", mailetStats.get("successful")+1);
-					System.out.println("line is: " + line);
-					System.out.println("attempt to parse this tld: "+ line.substring(indexOfSuccessfullyTo + 16, line.indexOf(" at ")));
+					//					System.out.println("line is: " + line);
+					//					System.out.println("attempt to parse this tld: "+ line.substring(indexOfSuccessfullyTo + 16, line.indexOf(" at ")));
 
 					String tld = Utils.parseTLD(line.substring(indexOfSuccessfullyTo + 16, line.indexOf(" at ")));
 					Integer numCounts = mailetDomainCount.get(tld);
@@ -167,7 +148,7 @@ public class JamesLogParser { // could do some fancy factory stuff here later...
 					} else {
 						mailetDomainCount.put(tld, numCounts + 1);
 					}
-	
+
 				} else if(line.indexOf("retries") > 0 && line.indexOf("after") > 0){
 					mailetStats.put("retry", mailetStats.get("retry") + Integer.parseInt(line.substring(line.indexOf("after")+6, line.indexOf("retries")-1)));
 				} else if (line.indexOf("Storing") > 0 && line.indexOf("error") > 0){
@@ -189,40 +170,56 @@ public class JamesLogParser { // could do some fancy factory stuff here later...
 			//System.out.println("numsuccess: " + stats.get("successful"));
 			//System.out.println("retries: " + stats.get("retry"));
 			//System.out.println("errors: " + stats.get("error"));
-	
+
 			br.close();
 			out.close();
 		} catch (Exception ex){
 			ex.printStackTrace();
 		} 
 	}
-
+	
+	/**
+	 * 
+	 * @param args
+	 */
 	public static void main(String args[]){
+
 		String smtpserverLogFilePath = args[0]; 
 		String mailetLogFilePath = args[1];
 		String outputPath = args[2];
 		String successfullysentdomains = args[3];
 		String spooledsenderdomains = args[4];
 		String opayqspooledemailreceiver = args[5];
+
 		long startTime = new Date().getTime();
-		
+
 		File folder = new File(smtpserverLogFilePath);
-		File[] listOfFiles = folder.listFiles();
+		if(folder.isFile()){
+			JamesLogParser.parseSMTP(folder.getAbsolutePath(), outputPath);
+		} else {
+			File[] listOfFiles = folder.listFiles();
 
-		for (File file : listOfFiles) {
-		    if (file.isFile()) {	
-				JamesLogParser.parseSMTP(file.getAbsolutePath(), outputPath);
-		    }
+			for (File file : listOfFiles) {
+				if (file.isFile()) {	
+					JamesLogParser.parseSMTP(file.getAbsolutePath(), outputPath);
+				}
+			}
 		}
+
 		File mailetFolder = new File(mailetLogFilePath);
-		File[] mailetFiles = mailetFolder.listFiles();
 
-		for (File file : mailetFiles) {
-		    if (file.isFile()) {	
-				JamesLogParser.parseMailet(file.getAbsolutePath(), outputPath);
-		    }
+		if(folder.isFile()){
+			JamesLogParser.parseMailet(folder.getAbsolutePath(), outputPath);
+		} else {
+			File[] mailetFiles = mailetFolder.listFiles();
+
+			for (File file : mailetFiles) {
+				if (file.isFile()) {	
+					JamesLogParser.parseMailet(file.getAbsolutePath(), outputPath);
+				}
+			}
 		}
-		
+
 		Utils.printOutput(mailetDomainCount, successfullysentdomains);
 		Utils.printOutput(smtpDomainCount, spooledsenderdomains);
 		Utils.printOutput(opayqReceivedMailCount, opayqspooledemailreceiver);

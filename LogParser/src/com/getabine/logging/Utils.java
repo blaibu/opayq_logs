@@ -80,6 +80,30 @@ public class Utils {
 			e.printStackTrace();
 		}
 	}
+	
+	private static void printTopN(LinkedHashMap<String, Integer> mapToSort, int max, PrintWriter out) throws IOException{
+		int resultsToReturn = max;
+		ArrayList<Integer> values = new ArrayList<Integer>();
+		values.addAll(mapToSort.values());
+
+		Collections.sort(values, Collections.reverseOrder());
+
+		//int last_i = -1;
+		if(values.size() < resultsToReturn){
+			resultsToReturn = values.size();
+		}
+
+		for (Integer i : values.subList(0, resultsToReturn)) { 
+			/*if (last_i == i) // without duplicates
+				continue;
+			last_i = i;
+			 */
+			for (String s : mapToSort.keySet()) { 
+				if (mapToSort.get(s) == i)   
+					out.println(s + ": " + i);
+			}
+		}
+	}
 
 	
 }
