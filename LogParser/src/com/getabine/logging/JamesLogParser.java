@@ -2,6 +2,7 @@ package com.getabine.logging;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.FileWriter;
@@ -19,6 +20,11 @@ public class JamesLogParser { // could do some fancy factory stuff here later...
 
 	public static final int MAX_RESULTS = 10;
 	public static final String DEFAULT_OUTPUT_PATH = "/Users/blai/Documents/james_stats.txt";
+	public static LinkedHashMap<String, Integer> mailetDomainCount = new LinkedHashMap<String, Integer>();
+
+	public static HashMap<String, Integer> mailetStats = new HashMap<String, Integer>();
+	public static LinkedHashMap<String, Integer> smtpDomainCount = new LinkedHashMap<String, Integer>();
+	public static LinkedHashMap<String, Integer> opayqReceivedMailCount = new LinkedHashMap<String, Integer>();
 
 	/**
 	 * Parse the smtp log file.  The JAMES smtp log file contains information on when mail
@@ -41,8 +47,7 @@ public class JamesLogParser { // could do some fancy factory stuff here later...
 
 		/*TreeBidiMap domainCount = new TreeBidiMap(); // String, Integer
 		TreeBidiMap opayqReceivedMailCount = new TreeBidiMap();*/
-		LinkedHashMap<String, Integer> domainCount = new LinkedHashMap<String, Integer>();
-		LinkedHashMap<String, Integer> opayqReceivedMailCount = new LinkedHashMap<String, Integer>();
+
 		BufferedReader br;
 		try {
 			PrintWriter out = new PrintWriter(new BufferedWriter(new FileWriter(outputPath, false)));
@@ -62,20 +67,20 @@ public class JamesLogParser { // could do some fancy factory stuff here later...
 					if(indexOfOn > 0) { // there can be @ and [ for rejected mails too...
 						Integer numCounts;
 						if(indexOfAtSign+1 < indexOfOn){
-							tld = parseTLD(line.substring(indexOfAtSign+1, indexOfOn));
+							tld = Utils.parseTLD(line.substring(indexOfAtSign+1, indexOfOn));
 							if(tld.equals("opayq.com")) continue;
 							//System.out.println("TLD: " + tld);
-							numCounts = domainCount.get(tld);
+							numCounts = smtpDomainCount.get(tld);
 
 							if(numCounts != null){
 								//System.out.println("found a key");
-								domainCount.put(tld, numCounts+1);
+								smtpDomainCount.put(tld, numCounts+1);
 							} else {
-								domainCount.put(tld, new Integer(1));
+								smtpDomainCount.put(tld, new Integer(1));
 							}
 						}
 
-						opayqUser = parseEmailUser(line.substring(indexOfBracket+1, line.indexOf("]")+1));
+						opayqUser = Utils.parseEmailUser(line.substring(indexOfBracket+1, line.indexOf("]")+1));
 
 						numCounts = opayqReceivedMailCount.get(opayqUser);
 						if(numCounts != null){
@@ -88,11 +93,6 @@ public class JamesLogParser { // could do some fancy factory stuff here later...
 				}
 			} // close while
 
-			out.println("Top 10 opayq email recipients:");
-			printTopN(opayqReceivedMailCount, MAX_RESULTS, out);
-			out.println("Top 10 email originating domains:");
-			printTopN(domainCount, MAX_RESULTS, out);
-
 			br.close();
 			out.close();
 		} catch (FileNotFoundException e) {
@@ -103,42 +103,6 @@ public class JamesLogParser { // could do some fancy factory stuff here later...
 			e.printStackTrace();
 		}
 
-	}
-
-	/**
-	 * look for TLDs -> let's do it with an easy non-overkill matching -> take the string from stuff before first @ to space before "on"
-	 * then for TLD, split on '.' if greater than 2 strings, then take the last 2 strings as TLD unless either are < 3 characters each.  
-	 * keep going until you have all strings or the total tld is at least 7 characters long (including '.'s)
-	 * @param domain
-	 * @return
-	 */
-	private static String parseTLD(String domain){
-		String tld = null;
-		String[] parts = domain.split("\\.");
-		//System.out.println(domain);
-
-		if(parts.length > 0){
-			try{
-				if(parts.length == 1){
-					tld = parts[0];
-				} else {
-					tld = parts[parts.length-2] + '.' + parts[parts.length-1];
-					int i = parts.length-3;
-					while(tld.length() < 7 && i >-1) {// 3 + 1 + 3
-						tld = parts[i] + '.' + tld;
-						//System.out.println("TLD: " + tld);
-					}
-				}
-			}catch (Exception ex) {
-				ex.printStackTrace();
-			}
-		}
-		return tld.trim();
-	}
-
-	private static String parseEmailUser(String emailAddress){
-		//String email = null;
-		return emailAddress.substring(0, emailAddress.indexOf("@"));
 	}
 
 	private static void printTopN(LinkedHashMap<String, Integer> mapToSort, int max, PrintWriter out) throws IOException{
@@ -185,25 +149,34 @@ public class JamesLogParser { // could do some fancy factory stuff here later...
 
 			String line;
 
-			HashMap<String, Integer> stats = new HashMap<String, Integer>();
-			CharSequence successSequence = "sent successfully";
-
-			stats.put("successful", new Integer(0));
-			stats.put("retry", new Integer(0));
-			stats.put("error", new Integer(0));
+			mailetStats.put("successful", new Integer(0));
+			mailetStats.put("retry", new Integer(0));
+			mailetStats.put("error", new Integer(0));
 
 			while ((line = br.readLine()) != null) {
-				if(line.contains(successSequence)){
-					stats.put("successful", stats.get("successful")+1);
+				int indexOfSuccessfullyTo = line.indexOf("successfully to ");
+				if(indexOfSuccessfullyTo > 0){
+					mailetStats.put("successful", mailetStats.get("successful")+1);
+					System.out.println("line is: " + line);
+					System.out.println("attempt to parse this tld: "+ line.substring(indexOfSuccessfullyTo + 16, line.indexOf(" at ")));
+
+					String tld = Utils.parseTLD(line.substring(indexOfSuccessfullyTo + 16, line.indexOf(" at ")));
+					Integer numCounts = mailetDomainCount.get(tld);
+					if(numCounts == null){
+						mailetDomainCount.put(tld, new Integer(1));
+					} else {
+						mailetDomainCount.put(tld, numCounts + 1);
+					}
+	
 				} else if(line.indexOf("retries") > 0 && line.indexOf("after") > 0){
-					stats.put("retry", stats.get("retry") + Integer.parseInt(line.substring(line.indexOf("after")+6, line.indexOf("retries")-1)));
+					mailetStats.put("retry", mailetStats.get("retry") + Integer.parseInt(line.substring(line.indexOf("after")+6, line.indexOf("retries")-1)));
 				} else if (line.indexOf("Storing") > 0 && line.indexOf("error") > 0){
-					stats.put("error", stats.get("error") +1); // stored a mail in error folder (unsuccessful)
+					mailetStats.put("error", mailetStats.get("error") +1); // stored a mail in error folder (unsuccessful)
 				}
 			}
-			Integer numSuccessful = stats.get("successful");
-			Integer numRetries = stats.get("retry");
-			Integer numErrors = stats.get("error");
+			Integer numSuccessful = mailetStats.get("successful");
+			Integer numRetries = mailetStats.get("retry");
+			Integer numErrors = mailetStats.get("error");
 
 			DecimalFormat df = new DecimalFormat();
 			df.setMinimumFractionDigits(2);
@@ -216,6 +189,7 @@ public class JamesLogParser { // could do some fancy factory stuff here later...
 			//System.out.println("numsuccess: " + stats.get("successful"));
 			//System.out.println("retries: " + stats.get("retry"));
 			//System.out.println("errors: " + stats.get("error"));
+	
 			br.close();
 			out.close();
 		} catch (Exception ex){
@@ -224,14 +198,34 @@ public class JamesLogParser { // could do some fancy factory stuff here later...
 	}
 
 	public static void main(String args[]){
-		String smtpserverLogFilePath = args[0];
+		String smtpserverLogFilePath = args[0]; 
 		String mailetLogFilePath = args[1];
 		String outputPath = args[2];
+		String successfullysentdomains = args[3];
+		String spooledsenderdomains = args[4];
+		String opayqspooledemailreceiver = args[5];
 		long startTime = new Date().getTime();
-		//JamesLogParser.parseSMTP("/Users/blai/Documents/smtpserver-2012-11-04-00-00.log", args[2]);
-		//JamesLogParser.parseMailet("/Users/blai/Documents/mailet-2012-11-03-00-00.log", args[2]);
-		JamesLogParser.parseSMTP(smtpserverLogFilePath, outputPath);
-		JamesLogParser.parseMailet(mailetLogFilePath, outputPath);
+		
+		File folder = new File(smtpserverLogFilePath);
+		File[] listOfFiles = folder.listFiles();
+
+		for (File file : listOfFiles) {
+		    if (file.isFile()) {	
+				JamesLogParser.parseSMTP(file.getAbsolutePath(), outputPath);
+		    }
+		}
+		File mailetFolder = new File(mailetLogFilePath);
+		File[] mailetFiles = mailetFolder.listFiles();
+
+		for (File file : mailetFiles) {
+		    if (file.isFile()) {	
+				JamesLogParser.parseMailet(file.getAbsolutePath(), outputPath);
+		    }
+		}
+		
+		Utils.printOutput(mailetDomainCount, successfullysentdomains);
+		Utils.printOutput(smtpDomainCount, spooledsenderdomains);
+		Utils.printOutput(opayqReceivedMailCount, opayqspooledemailreceiver);
 		System.out.println("Done in: " + (new Date().getTime() - startTime) + "ms");
 	}
 }
